@@ -1,0 +1,41 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Lumina.App"
+             RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="LumBg" Color="#090A0C"/>
+          <SolidColorBrush x:Key="LumSurface" Color="#14161C"/>
+          <SolidColorBrush x:Key="LumSurface2" Color="#1C1F28"/>
+          <SolidColorBrush x:Key="LumGlass" Color="#F012141B"/>
+          <SolidColorBrush x:Key="LumBorder" Color="#2EF6F3EC"/>
+          <SolidColorBrush x:Key="LumText" Color="#F6F3EC"/>
+          <SolidColorBrush x:Key="LumMuted" Color="#A39E93"/>
+          <SolidColorBrush x:Key="LumAccent" Color="#E4B15A"/>
+          <SolidColorBrush x:Key="LumAccentDeep" Color="#1A140C"/>
+          <SolidColorBrush x:Key="LumHover" Color="#18F6F3EC"/>
+          <SolidColorBrush x:Key="LumDanger" Color="#E36A5D"/>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="LumBg" Color="#E7E1D6"/>
+          <SolidColorBrush x:Key="LumSurface" Color="#F7F4EE"/>
+          <SolidColorBrush x:Key="LumSurface2" Color="#E4DDD2"/>
+          <SolidColorBrush x:Key="LumGlass" Color="#F7FFFCF8"/>
+          <SolidColorBrush x:Key="LumBorder" Color="#2A1C1915"/>
+          <SolidColorBrush x:Key="LumText" Color="#1C1915"/>
+          <SolidColorBrush x:Key="LumMuted" Color="#6F685C"/>
+          <SolidColorBrush x:Key="LumAccent" Color="#8C5A1E"/>
+          <SolidColorBrush x:Key="LumAccentDeep" Color="#FFF8EE"/>
+          <SolidColorBrush x:Key="LumHover" Color="#14000000"/>
+          <SolidColorBrush x:Key="LumDanger" Color="#B42318"/>
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme />
+    <StyleInclude Source="avares://Lumina/Assets/Styles.axaml"/>
+  </Application.Styles>
+</Application>

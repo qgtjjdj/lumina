@@ -1,0 +1,148 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="using:Lumina.Views">
+
+  <Style Selector="Window">
+    <Setter Property="FontFamily" Value="Inter, $Default"/>
+  </Style>
+
+  <Style Selector="views|Icon">
+    <Setter Property="Width" Value="18"/>
+    <Setter Property="Height" Value="18"/>
+    <Setter Property="Foreground" Value="{DynamicResource LumText}"/>
+  </Style>
+
+  <Style Selector="Border.glass">
+    <Setter Property="Background" Value="{DynamicResource LumGlass}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource LumBorder}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="18"/>
+    <Setter Property="BoxShadow" Value="0 18 50 0 #55000000"/>
+  </Style>
+
+  <Style Selector="Button.ghost">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="CornerRadius" Value="10"/>
+    <Setter Property="Padding" Value="10,8"/>
+    <Setter Property="Foreground" Value="{DynamicResource LumText}"/>
+    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="Cursor" Value="Hand"/>
+  </Style>
+  <Style Selector="Button.ghost:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource LumHover}"/>
+  </Style>
+  <Style Selector="Button.ghost:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource LumHover}"/>
+  </Style>
+
+  <Style Selector="Button.accent">
+    <Setter Property="Background" Value="{DynamicResource LumAccent}"/>
+    <Setter Property="Foreground" Value="{DynamicResource LumAccentDeep}"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="CornerRadius" Value="12"/>
+    <Setter Property="Padding" Value="16,10"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="Cursor" Value="Hand"/>
+  </Style>
+  <Style Selector="Button.accent:pointerover">
+    <Setter Property="Opacity" Value="0.88"/>
+  </Style>
+
+  <Style Selector="Button.chrome">
+    <Setter Property="Width" Value="36"/>
+    <Setter Property="Height" Value="28"/>
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="CornerRadius" Value="8"/>
+    <Setter Property="Foreground" Value="{DynamicResource LumText}"/>
+    <Setter Property="Cursor" Value="Hand"/>
+  </Style>
+  <Style Selector="Button.chrome:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource LumHover}"/>
+  </Style>
+  <Style Selector="Button.chrome.close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource LumDanger}"/>
+  </Style>
+  <Style Selector="Button.chrome.close:pointerover views|Icon">
+    <Setter Property="Foreground" Value="White"/>
+  </Style>
+
+  <Style Selector="TextBox.search">
+    <Setter Property="Background" Value="{DynamicResource LumSurface2}"/>
+    <Setter Property="Foreground" Value="{DynamicResource LumText}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource LumBorder}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="999"/>
+    <Setter Property="Padding" Value="14,8"/>
+    <Setter Property="MinWidth" Value="200"/>
+    <Setter Property="FontSize" Value="13"/>
+  </Style>
+
+  <Style Selector="TextBlock.section">
+    <Setter Property="Foreground" Value="{DynamicResource LumMuted}"/>
+    <Setter Property="FontSize" Value="11"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="LetterSpacing" Value="1.2"/>
+  </Style>
+
+  <Style Selector="TextBlock.muted">
+    <Setter Property="Foreground" Value="{DynamicResource LumMuted}"/>
+    <Setter Property="FontSize" Value="12"/>
+  </Style>
+
+  <Style Selector="CheckBox">
+    <Setter Property="Foreground" Value="{DynamicResource LumText}"/>
+    <Setter Property="FontSize" Value="13"/>
+  </Style>
+
+  <Style Selector="ComboBox">
+    <Setter Property="Foreground" Value="{DynamicResource LumText}"/>
+    <Setter Property="Background" Value="{DynamicResource LumSurface2}"/>
+    <Setter Property="MinHeight" Value="32"/>
+  </Style>
+
+  <Style Selector="Slider">
+    <Setter Property="Foreground" Value="{DynamicResource LumAccent}"/>
+  </Style>
+
+  <Style Selector="ListBox.film">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Padding" Value="6,8"/>
+  </Style>
+  <Style Selector="ListBox.film ListBoxItem">
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="Margin" Value="4,0"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="CornerRadius" Value="12"/>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border x:Name="Root"
+                Background="Transparent"
+                BorderBrush="Transparent"
+                BorderThickness="2"
+                CornerRadius="12"
+                Padding="0">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"/>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ListBox.film ListBoxItem:pointerover /template/ Border#Root">
+    <Setter Property="Opacity" Value="1"/>
+  </Style>
+  <Style Selector="ListBox.film ListBoxItem:selected /template/ Border#Root">
+    <Setter Property="BorderBrush" Value="{DynamicResource LumAccent}"/>
+  </Style>
+
+  <Style Selector="ProgressBar.slide">
+    <Setter Property="Height" Value="3"/>
+    <Setter Property="Foreground" Value="{DynamicResource LumAccent}"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="CornerRadius" Value="99"/>
+  </Style>
+</Styles>

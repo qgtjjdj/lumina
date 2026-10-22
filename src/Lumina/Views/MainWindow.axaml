@@ -1,0 +1,443 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Lumina.ViewModels"
+        xmlns:views="using:Lumina.Views"
+        xmlns:models="using:Lumina.Models"
+        x:Class="Lumina.Views.MainWindow"
+        x:Name="Root"
+        x:DataType="vm:MainViewModel"
+        Title="Lumina"
+        Width="1320"
+        Height="860"
+        MinWidth="960"
+        MinHeight="640"
+        WindowStartupLocation="CenterScreen"
+        WindowDecorations="None"
+        Background="{DynamicResource LumBg}"
+        ExtendClientAreaToDecorationsHint="False">
+  <Grid>
+    <views:ImageViewport x:Name="Viewport"
+                         Source="{Binding CurrentImage}"
+                         Rotation="{Binding Rotation}"
+                         FlipH="{Binding FlipH}"
+                         FlipV="{Binding FlipV}"
+                         Stage="{Binding Stage}"/>
+
+    <Border IsVisible="{Binding ShowWelcome}"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Width="460"
+            Padding="28"
+            Classes="glass">
+      <StackPanel Spacing="14">
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <Grid Width="36" Height="36">
+            <Ellipse Stroke="{DynamicResource LumAccent}" StrokeThickness="1.6"/>
+            <Ellipse Width="10" Height="10" Fill="{DynamicResource LumAccent}"/>
+          </Grid>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="Lumina" FontSize="26" FontWeight="SemiBold" Foreground="{DynamicResource LumText}"/>
+            <TextBlock Text="Bilder, ruhig und groß." Classes="muted"/>
+          </StackPanel>
+        </StackPanel>
+        <TextBlock Text="Ordner öffnen, Dateien wählen oder sie einfach auf das Fenster ziehen. JPG, PNG, GIF, WebP, TIFF, BMP."
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource LumMuted}"
+                   FontSize="13"
+                   LineHeight="20"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Classes="accent" Content="Ordner öffnen" Command="{Binding OpenFolderCommand}"/>
+          <Button Classes="ghost" Content="Dateien…" Command="{Binding OpenFilesCommand}"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <Border IsVisible="{Binding IsDragOver}"
+            Margin="18"
+            CornerRadius="22"
+            BorderThickness="1.5"
+            BorderBrush="{DynamicResource LumAccent}"
+            Background="#6614100C"
+            IsHitTestVisible="False">
+      <TextBlock Text="Loslassen — Bilder oder einen Ordner öffnen"
+                 HorizontalAlignment="Center"
+                 VerticalAlignment="Center"
+                 Foreground="{DynamicResource LumAccent}"
+                 FontSize="20"
+                 FontWeight="SemiBold"/>
+    </Border>
+
+    <Border IsVisible="{Binding IsBusy}"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Padding="18,12"
+            Classes="glass"
+            IsHitTestVisible="False">
+      <TextBlock Text="{Binding BusyText}" Foreground="{DynamicResource LumText}"/>
+    </Border>
+
+    <Border Classes="glass"
+            IsVisible="{Binding ShowSidebar}"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Stretch"
+            Width="292"
+            Margin="14,70,0,92"
+            Padding="14,12">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="BIBLIOTHEK" Classes="section" Margin="4,2,0,10"/>
+        <ScrollViewer DockPanel.Dock="Bottom">
+          <StackPanel Spacing="12">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Button Classes="accent" Command="{Binding OpenFolderCommand}" Content="Ordner"/>
+              <Button Classes="ghost" Command="{Binding OpenFilesCommand}" Content="Dateien"/>
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <TextBlock Text="SORTIERUNG" Classes="section"/>
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <ComboBox SelectedIndex="{Binding SortIndex}">
+                  <ComboBoxItem>Name</ComboBoxItem>
+                  <ComboBoxItem>Datum</ComboBoxItem>
+                  <ComboBoxItem>Größe</ComboBoxItem>
+                  <ComboBoxItem>Typ</ComboBoxItem>
+                </ComboBox>
+                <Button Grid.Column="1" Classes="ghost" Command="{Binding ToggleSortDirectionCommand}" Padding="8,6" MinWidth="52">
+                  <TextBlock Text="{Binding SortLabel}"/>
+                </Button>
+              </Grid>
+              <CheckBox Content="Unterordner" IsChecked="{Binding Recursive}"/>
+              <CheckBox Content="Zoom behalten" IsChecked="{Binding KeepZoom}"/>
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <TextBlock Text="BÜHNE" Classes="section"/>
+              <ComboBox SelectedIndex="{Binding StageIndex}">
+                <ComboBoxItem>Nacht</ComboBoxItem>
+                <ComboBoxItem>Tinte</ComboBoxItem>
+                <ComboBoxItem>Papier</ComboBoxItem>
+                <ComboBoxItem>Raster</ComboBoxItem>
+              </ComboBox>
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <TextBlock Text="DIASHOW" Classes="section"/>
+              <TextBlock Classes="muted">
+                <Run Text="{Binding SlideshowSeconds, StringFormat='{}{0:0} s'}"/>
+              </TextBlock>
+              <Slider Minimum="1" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding SlideshowSeconds}"/>
+              <CheckBox Content="Wiederholen" IsChecked="{Binding SlideshowLoop}"/>
+            </StackPanel>
+
+            <StackPanel Spacing="6" IsVisible="{Binding HasRecents}">
+              <TextBlock Text="ZULETZT" Classes="section"/>
+              <ItemsControl ItemsSource="{Binding Recents}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:RecentEntry">
+                    <Button Classes="ghost"
+                            Command="{Binding Open}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="8,6">
+                      <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis"/>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <StackPanel Spacing="6" IsVisible="{Binding HasFavorites}">
+              <TextBlock Text="FAVORITEN" Classes="section"/>
+              <ItemsControl ItemsSource="{Binding Favorites}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:RecentEntry">
+                    <Button Classes="ghost"
+                            Command="{Binding Open}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Padding="8,6">
+                      <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis"/>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+
+    <Border Classes="glass"
+            IsVisible="{Binding ShowInfo}"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Width="300"
+            MaxHeight="640"
+            Margin="0,70,14,0"
+            Padding="16,14">
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="10" IsVisible="{Binding HasSelection}">
+          <TextBlock Text="{Binding DetailTitle}"
+                     FontSize="16"
+                     FontWeight="SemiBold"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource LumText}"/>
+          <TextBlock Text="{Binding DetailPath}" Classes="muted" TextWrapping="Wrap"/>
+          <StackPanel Orientation="Horizontal" Spacing="2">
+            <ItemsControl ItemsSource="{Binding Stars}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:StarVm">
+                  <Button Classes="ghost" Command="{Binding Rate}" Padding="2,0" MinWidth="28">
+                    <TextBlock Text="{Binding Glyph}" FontSize="18" Foreground="{DynamicResource LumAccent}"/>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Classes="ghost" Command="{Binding ToggleFavoriteCommand}" Margin="8,0,0,0">
+              <TextBlock Text="Favorit" Foreground="{DynamicResource LumText}"/>
+            </Button>
+          </StackPanel>
+          <ItemsControl ItemsSource="{Binding Meta}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="models:MetaRow">
+                <Grid ColumnDefinitions="96,*" Margin="0,2">
+                  <TextBlock Text="{Binding Label}" Classes="muted"/>
+                  <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="{DynamicResource LumText}" TextWrapping="Wrap"/>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <views:MiniBars Height="42"
+                          IsVisible="{Binding HasHistogram}"
+                          Values="{Binding Histogram}"
+                          Foreground="{DynamicResource LumAccent}"/>
+          <ItemsControl ItemsSource="{Binding Palette}" IsVisible="{Binding HasPalette}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="6"/>
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="models:Swatch">
+                <Border Width="16" Height="16" CornerRadius="8" Background="{Binding Brush}"
+                        BorderBrush="{DynamicResource LumBorder}" BorderThickness="1"/>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBlock Text="{Binding SubsampledNote}" Classes="muted" IsVisible="{Binding HasSubsampled}"/>
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <Button Classes="ghost" Command="{Binding CopyPathCommand}" ToolTip.Tip="Pfad kopieren">
+              <views:Icon Kind="Copy"/>
+            </Button>
+            <Button Classes="ghost" Command="{Binding RevealCommand}" ToolTip.Tip="Im Ordner zeigen">
+              <views:Icon Kind="External"/>
+            </Button>
+            <Button Classes="ghost" Command="{Binding RemoveFromSessionCommand}" ToolTip.Tip="Aus der Sitzung nehmen (Entf)">
+              <views:Icon Kind="Trash"/>
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
+    <Border VerticalAlignment="Top" Margin="14,10,14,0" Height="52" Classes="glass" Padding="10,0"
+            PointerPressed="OnTitlePressed">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <Grid Width="22" Height="22">
+            <Ellipse Stroke="{DynamicResource LumAccent}" StrokeThickness="1.5"/>
+            <Ellipse Width="6" Height="6" Fill="{DynamicResource LumAccent}"/>
+          </Grid>
+          <TextBlock Text="Lumina" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="15" Foreground="{DynamicResource LumText}"/>
+          <TextBlock Text="{Binding FolderTitle}" VerticalAlignment="Center" Classes="muted" MaxWidth="240" TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+        <TextBox Grid.Column="1"
+                 Classes="search"
+                 Margin="18,0"
+                 VerticalAlignment="Center"
+                 PlaceholderText="Suchen"
+                 Text="{Binding SearchText}"/>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+          <Button Classes="chrome" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="Bibliothek">
+            <views:Icon Kind="Sidebar"/>
+          </Button>
+          <Button Classes="chrome" Command="{Binding ToggleFilmstripCommand}" ToolTip.Tip="Filmstreifen">
+            <views:Icon Kind="Image"/>
+          </Button>
+          <Button Classes="chrome" Command="{Binding RefreshCommand}" ToolTip.Tip="Aktualisieren (F5)">
+            <views:Icon Kind="Refresh"/>
+          </Button>
+          <Button Classes="chrome" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="Hell / Dunkel">
+            <views:Icon Kind="Sun"/>
+          </Button>
+          <Button Classes="chrome" Command="{Binding ToggleHelpCommand}" ToolTip.Tip="Tasten (F1)">
+            <views:Icon Kind="Help"/>
+          </Button>
+          <Button Classes="chrome" Click="OnMinimize" IsVisible="{Binding ShowWindowButtons}">
+            <views:Icon Kind="Min"/>
+          </Button>
+          <Button Classes="chrome" Click="OnMaximize" IsVisible="{Binding ShowWindowButtons}">
+            <views:Icon Kind="Max"/>
+          </Button>
+          <Button Classes="chrome close" Click="OnClose" IsVisible="{Binding ShowWindowButtons}">
+            <views:Icon Kind="Close"/>
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <ProgressBar Classes="slide"
+                 VerticalAlignment="Top"
+                 Margin="28,64,28,0"
+                 Maximum="1"
+                 Value="{Binding SlideshowProgress}"
+                 IsVisible="{Binding IsSlideshow}"
+                 IsHitTestVisible="False"/>
+
+    <Border Classes="glass"
+            VerticalAlignment="Bottom"
+            Margin="14,0,14,78"
+            Height="104"
+            Padding="8,6"
+            IsVisible="{Binding ShowFilmstrip}">
+      <ListBox x:Name="Film"
+               Classes="film"
+               ItemsSource="{Binding Visible}"
+               SelectedItem="{Binding Selected, Mode=TwoWay}"
+               ScrollViewer.HorizontalScrollBarVisibility="Auto"
+               ScrollViewer.VerticalScrollBarVisibility="Disabled">
+        <ListBox.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel Orientation="Horizontal"/>
+          </ItemsPanelTemplate>
+        </ListBox.ItemsPanel>
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="models:GalleryItem">
+            <Border Width="92" Height="70" CornerRadius="10" ClipToBounds="True" Background="{DynamicResource LumSurface2}"
+                    ToolTip.Tip="{Binding Name}">
+              <Panel>
+                <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
+                <TextBlock Text="{Binding ExtensionLabel}"
+                           IsVisible="{Binding ThumbnailMissing}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Classes="muted"/>
+              </Panel>
+            </Border>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+
+    <Border Classes="glass"
+            VerticalAlignment="Bottom"
+            Margin="14,0,14,12"
+            Height="56"
+            Padding="8,0">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+          <Button Classes="ghost" Command="{Binding PrevCommand}" ToolTip.Tip="Zurück (←)">
+            <views:Icon Kind="ChevronLeft"/>
+          </Button>
+          <TextBlock Text="{Binding PositionText}"
+                     MinWidth="84"
+                     VerticalAlignment="Center"
+                     HorizontalAlignment="Center"
+                     TextAlignment="Center"
+                     Foreground="{DynamicResource LumText}"
+                     FontSize="13"/>
+          <Button Classes="ghost" Command="{Binding NextCommand}" ToolTip.Tip="Weiter (→)">
+            <views:Icon Kind="ChevronRight"/>
+          </Button>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" HorizontalAlignment="Center" VerticalAlignment="Center">
+          <Button Classes="ghost" Click="OnFit" ToolTip.Tip="Einpassen (0)">
+            <TextBlock Text="Einpassen"/>
+          </Button>
+          <Button Classes="ghost" Click="OnActual" ToolTip.Tip="100 % (1), Doppelklick">
+            <TextBlock Text="100 %"/>
+          </Button>
+          <Button Classes="ghost" Click="OnFill" ToolTip.Tip="Füllen (2)">
+            <TextBlock Text="Füllen"/>
+          </Button>
+          <Button Classes="ghost" Click="OnZoomOut" ToolTip.Tip="Verkleinern (−)">
+            <TextBlock Text="−" FontSize="18"/>
+          </Button>
+          <TextBlock x:Name="ZoomReadout"
+                     Text="Einpassen"
+                     MinWidth="118"
+                     VerticalAlignment="Center"
+                     TextAlignment="Center"
+                     Foreground="{DynamicResource LumMuted}"
+                     FontSize="12"/>
+          <Button Classes="ghost" Click="OnZoomIn" ToolTip.Tip="Vergrößern (+)">
+            <TextBlock Text="+" FontSize="18"/>
+          </Button>
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+          <Button Classes="ghost" Command="{Binding RotateCcwCommand}" ToolTip.Tip="Links drehen (Umschalt+R)">
+            <views:Icon Kind="RotateCw"/>
+          </Button>
+          <Button Classes="ghost" Command="{Binding FlipHorizontalCommand}" ToolTip.Tip="Horizontal spiegeln (H)">
+            <views:Icon Kind="FlipH"/>
+          </Button>
+          <Button Classes="ghost" Command="{Binding FlipVerticalCommand}" ToolTip.Tip="Vertikal spiegeln (V)">
+            <views:Icon Kind="FlipV"/>
+          </Button>
+          <Button Classes="ghost" Command="{Binding ShuffleCommand}" ToolTip.Tip="Mischen">
+            <views:Icon Kind="Shuffle"/>
+          </Button>
+          <Button Classes="ghost" Command="{Binding ToggleSlideshowCommand}" ToolTip.Tip="Diashow (Leertaste)">
+            <Panel>
+              <views:Icon Kind="Play" IsVisible="{Binding ShowPlayIcon}"/>
+              <views:Icon Kind="Pause" IsVisible="{Binding IsSlideshow}"/>
+            </Panel>
+          </Button>
+          <Button Classes="ghost" Command="{Binding ToggleInfoCommand}" ToolTip.Tip="Infos (I)">
+            <views:Icon Kind="Info"/>
+          </Button>
+          <Button Classes="ghost" Command="{Binding ToggleFullscreenCommand}" ToolTip.Tip="Vollbild (F)">
+            <views:Icon Kind="Max"/>
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border IsVisible="{Binding HasStatus}"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Bottom"
+            Margin="0,0,0,78"
+            Padding="14,8"
+            Classes="glass"
+            IsHitTestVisible="False">
+      <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource LumText}"/>
+    </Border>
+
+    <Border IsVisible="{Binding ShowHelp}" Background="#AA090A0C" PointerPressed="OnHelpBackdrop">
+      <Border Classes="glass" Width="520" Padding="22" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="Tastatur" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource LumText}"/>
+            <Button Grid.Column="1" Classes="chrome" Command="{Binding ToggleHelpCommand}">
+              <views:Icon Kind="Close"/>
+            </Button>
+          </Grid>
+          <TextBlock Classes="muted" TextWrapping="Wrap" LineHeight="22"
+                     Text="← →  vor / zurück&#x0a;Leertaste  Diashow&#x0a;Mausrad  Zoom am Cursor, ziehen zum Verschieben&#x0a;Doppelklick  Einpassen / 100 %    Mittelklick  Einpassen&#x0a;+ −  Zoom    0 Einpassen    1 100 %    2 Füllen&#x0a;R drehen    H / V spiegeln&#x0a;F oder F11  Vollbild    Esc  zurück&#x0a;I Infos    Entf  aus der Sitzung nehmen&#x0a;Strg+O Dateien    Strg+Umschalt+O Ordner    F5 aktualisieren&#x0a;Strg+C Pfad kopieren"/>
+          <TextBlock Classes="muted" Text="Bewertungen und Favoriten bleiben lokal. Dateien werden nie gelöscht."/>
+        </StackPanel>
+      </Border>
+    </Border>
+
+    <Grid x:Name="ResizeLayer" IsVisible="{Binding ShowWindowButtons}">
+      <Border VerticalAlignment="Top" Height="6" Background="Transparent" PointerPressed="ResizeNorth"/>
+      <Border VerticalAlignment="Bottom" Height="6" Background="Transparent" PointerPressed="ResizeSouth"/>
+      <Border HorizontalAlignment="Left" Width="6" Background="Transparent" PointerPressed="ResizeWest"/>
+      <Border HorizontalAlignment="Right" Width="6" Background="Transparent" PointerPressed="ResizeEast"/>
+    </Grid>
+  </Grid>
+</Window>
