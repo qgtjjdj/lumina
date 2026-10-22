@@ -234,11 +234,11 @@ public static class Imaging
                 canvas.Scale(-1, 1);
                 break;
             default:
-                canvas.DrawBitmap(src, 0, 0, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+                canvas.DrawBitmap(src, 0, 0);
                 return dst;
         }
 
-        canvas.DrawBitmap(src, 0, 0, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+        canvas.DrawBitmap(src, 0, 0);
         return dst;
     }
 
