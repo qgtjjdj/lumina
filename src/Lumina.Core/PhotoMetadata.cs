@@ -10,7 +10,8 @@ public sealed record PhotoDetails(
     string? Aperture,
     string? Iso,
     string? FocalLength,
-    string? Taken);
+    string? Taken,
+    string? ColorSpace);
 
 public static class PhotoMetadata
 {
@@ -34,16 +35,37 @@ public static class PhotoMetadata
             string? focal = Clean(sub?.GetDescription(ExifDirectoryBase.TagFocalLength));
             string? taken = Clean(sub?.GetDescription(ExifDirectoryBase.TagDateTimeOriginal))
                             ?? Clean(ifd0?.GetDescription(ExifDirectoryBase.TagDateTime));
+            string? color = ColorName(directories, sub, ifd0);
 
-            if (camera is null && lens is null && exposure is null && aperture is null && iso is null && focal is null && taken is null)
+            if (camera is null && lens is null && exposure is null && aperture is null && iso is null && focal is null && taken is null && color is null)
                 return null;
 
-            return new PhotoDetails(camera, lens, exposure, aperture, iso, focal, taken);
+            return new PhotoDetails(camera, lens, exposure, aperture, iso, focal, taken, color);
         }
         catch
         {
             return null;
         }
+    }
+
+    private static string? ColorName(IReadOnlyList<MetadataExtractor.Directory> directories, ExifSubIfdDirectory? sub, ExifIfd0Directory? ifd0)
+    {
+        foreach (var directory in directories)
+        {
+            if (!directory.Name.Contains("ICC", StringComparison.OrdinalIgnoreCase)) continue;
+            foreach (var tag in directory.Tags)
+            {
+                if (tag.Name.Contains("Profile Description", StringComparison.OrdinalIgnoreCase) ||
+                    tag.Name.Contains("Description", StringComparison.OrdinalIgnoreCase))
+                {
+                    var value = Clean(tag.Description);
+                    if (value is not null) return value;
+                }
+            }
+        }
+
+        return Clean(sub?.GetDescription(ExifDirectoryBase.TagColorSpace))
+               ?? Clean(ifd0?.GetDescription(ExifDirectoryBase.TagColorSpace));
     }
 
     private static string? Clean(string? value)

@@ -29,6 +29,8 @@ public sealed class FullPack
     public int OriginalWidth { get; init; }
     public int OriginalHeight { get; init; }
     public bool Subsampled { get; init; }
+    public bool IsPreview { get; init; }
+    public bool Animated { get; init; }
     public RawBitmap Image { get; init; }
     public List<FramePack> Frames { get; init; } = [];
     public PhotoDetails? Details { get; init; }
@@ -36,13 +38,29 @@ public sealed class FullPack
 
 public static class Imaging
 {
-    private const long MaxPixels = 12_000_000;
+    private const long SharpMaxPixels = 64_000_000;
+    private const int PreviewEdge = 2048;
     private const int ThumbEdge = 360;
     private const int AnimEdge = 1400;
     private const int MaxFrames = 80;
+    private static readonly SKColorSpace Srgb = SKColorSpace.CreateSrgb();
 
     public static ThumbPack? Thumbnail(string path)
     {
+        if (ForeignImaging.Handles(path))
+        {
+            var foreign = ForeignImaging.Decode(path, ThumbEdge, SharpMaxPixels);
+            if (foreign is null) return null;
+            return new ThumbPack
+            {
+                OriginalWidth = foreign.Value.OriginalWidth,
+                OriginalHeight = foreign.Value.OriginalHeight,
+                Image = foreign.Value.Image,
+                Histogram = BuildHistogram(foreign.Value.Image),
+                Palette = BuildPalette(foreign.Value.Image)
+            };
+        }
+
         using var codec = SKCodec.Create(path);
         if (codec is null) return null;
 
@@ -61,12 +79,34 @@ public static class Imaging
         };
     }
 
-    public static FullPack? Full(string path)
+    public static FullPack? Preview(string path) => Load(path, preview: true);
+
+    public static FullPack? Sharp(string path) => Load(path, preview: false);
+
+    private static FullPack? Load(string path, bool preview)
     {
+        if (ForeignImaging.Handles(path))
+        {
+            var foreignEdge = preview ? PreviewEdge : 0;
+            var foreign = ForeignImaging.Decode(path, foreignEdge, SharpMaxPixels);
+            if (foreign is null) return null;
+            var soft = foreign.Value.Subsampled;
+            return new FullPack
+            {
+                OriginalWidth = foreign.Value.OriginalWidth,
+                OriginalHeight = foreign.Value.OriginalHeight,
+                Subsampled = soft,
+                IsPreview = preview && soft,
+                Image = foreign.Value.Image,
+                Details = preview ? PhotoMetadata.Read(path) : null
+            };
+        }
+
         using var codec = SKCodec.Create(path);
         if (codec is null) return null;
+        if (!preview && codec.FrameCount > 1) return null;
 
-        var details = PhotoMetadata.Read(path);
+        var details = preview ? PhotoMetadata.Read(path) : null;
         var (ow, oh) = OrientedSize(codec.Info.Width, codec.Info.Height, codec.EncodedOrigin);
 
         if (codec.FrameCount > 1)
@@ -81,20 +121,25 @@ public static class Imaging
                     Image = frames[0].Image,
                     Frames = frames,
                     Details = details,
-                    Subsampled = true
+                    Subsampled = true,
+                    Animated = true
                 };
             }
         }
 
+        var longest = Math.Max(codec.Info.Width, codec.Info.Height);
         var edge = TargetEdge(codec.Info.Width, codec.Info.Height);
+        if (preview) edge = Math.Min(edge, PreviewEdge);
         using var decoded = DecodeScaled(codec, edge);
         if (decoded is null) return null;
         using var oriented = Orient(decoded, codec.EncodedOrigin);
+        var subsampled = edge < longest;
         return new FullPack
         {
             OriginalWidth = ow,
             OriginalHeight = oh,
-            Subsampled = edge < Math.Max(codec.Info.Width, codec.Info.Height),
+            Subsampled = subsampled,
+            IsPreview = preview && subsampled,
             Image = FromSk(oriented),
             Details = details
         };
@@ -113,7 +158,8 @@ public static class Imaging
                 Math.Max(1, (int)(w * scale)),
                 Math.Max(1, (int)(h * scale)),
                 SKColorType.Bgra8888,
-                SKAlphaType.Premul);
+                SKAlphaType.Premul,
+                Srgb);
 
             using var canvasBitmap = new SKBitmap(info);
             for (var i = 0; i < count; i++)
@@ -142,8 +188,8 @@ public static class Imaging
         width = Math.Max(1, width);
         height = Math.Max(1, height);
         var pixels = (long)width * height;
-        if (pixels <= MaxPixels) return Math.Max(width, height);
-        var scale = Math.Sqrt(MaxPixels / (double)pixels);
+        if (pixels <= SharpMaxPixels) return Math.Max(width, height);
+        var scale = Math.Sqrt(SharpMaxPixels / (double)pixels);
         return Math.Max(1, (int)Math.Round(Math.Max(width, height) * scale));
     }
 
@@ -159,7 +205,8 @@ public static class Imaging
             Math.Max(1, width / sample),
             Math.Max(1, height / sample),
             SKColorType.Bgra8888,
-            SKAlphaType.Premul);
+            SKAlphaType.Premul,
+            Srgb);
 
         var bitmap = SKBitmap.Decode(codec, info);
         if (bitmap is null) return null;
@@ -173,7 +220,8 @@ public static class Imaging
                 Math.Max(1, (int)(bitmap.Width * scale)),
                 Math.Max(1, (int)(bitmap.Height * scale)),
                 SKColorType.Bgra8888,
-                SKAlphaType.Premul),
+                SKAlphaType.Premul,
+                Srgb),
             new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
         bitmap.Dispose();
         return resized;

@@ -50,7 +50,11 @@ public sealed class RecentEntry
 public partial class MainViewModel : ObservableObject
 {
     private readonly AppSettings _settings;
-    private readonly ConcurrentDictionary<string, FullPack> _cache = new();
+    private readonly ConcurrentDictionary<string, FullPack> _preview = new();
+    private readonly ConcurrentDictionary<string, FullPack> _full = new();
+    private readonly ConcurrentDictionary<string, byte> _detailGate = new();
+    private readonly object _watchGate = new();
+    private readonly Dictionary<string, bool> _watchPending = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _clock;
     private readonly Stopwatch _slideWatch = new();
     private readonly List<GalleryItem> _all = [];
@@ -141,6 +145,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool hasFavorites;
     [ObservableProperty] private bool hasPalette;
     [ObservableProperty] private bool hasHistogram;
+    [ObservableProperty] private int fileWidth;
+    [ObservableProperty] private int fileHeight;
+    [ObservableProperty] private int photoToken;
+    [ObservableProperty] private bool smoothTransitions = true;
 
     public event Action<bool>? FullscreenRequested;
     public event Action? FitRequested;
@@ -180,7 +188,10 @@ public partial class MainViewModel : ObservableObject
         StopAnim(dispose: true);
         _clock.Stop();
         _still?.Dispose();
+        if (CurrentImage is not null && !ReferenceEquals(CurrentImage, _still))
+            CurrentImage.Dispose();
         _still = null;
+        CurrentImage = null;
         SaveSettings();
     }
 
@@ -310,7 +321,7 @@ public partial class MainViewModel : ObservableObject
             [
                 new FilePickerFileType("Bilder")
                 {
-                    Patterns = ["*.jpg", "*.jpeg", "*.png", "*.gif", "*.bmp", "*.webp", "*.tif", "*.tiff", "*.ico", "*.avif"]
+                    Patterns = ImageTypes.Patterns.ToList()
                 }
             ]
         });
@@ -366,14 +377,11 @@ public partial class MainViewModel : ObservableObject
     {
         if (Selected is null) return;
         var path = Selected.File.Path;
-        if (_settings.Favorites.Contains(path, StringComparer.OrdinalIgnoreCase))
-            _settings.Favorites.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
-        else
-            _settings.Favorites.Insert(0, path);
-        IsFavorite = _settings.Favorites.Contains(path, StringComparer.OrdinalIgnoreCase);
-        RebuildSavedLists();
-        SaveSoon();
-        Toast(IsFavorite ? "Zu Favoriten gelegt" : "Favorit entfernt");
+        IsFavorite = !_settings.Favorites.Contains(path, StringComparer.OrdinalIgnoreCase);
+        var wrote = RememberMarks(path, Rating, IsFavorite);
+        Toast(wrote
+            ? IsFavorite ? "Zu Favoriten gelegt" : "Favorit entfernt"
+            : "Neben der Datei nicht schreibbar — nur in den Einstellungen gemerkt");
     }
 
     [RelayCommand] private void ToggleSortDirection() => SortDescending = !SortDescending;
@@ -401,7 +409,7 @@ public partial class MainViewModel : ObservableObject
         _all.Remove(item);
         Visible.Remove(item);
         item.Thumbnail?.Dispose();
-        _cache.TryRemove(item.File.Path, out _);
+        DropCaches(item.File.Path);
         Selected = Visible.Count == 0 ? null : Visible[Math.Clamp(index, 0, Visible.Count - 1)];
         UpdateChrome();
         Toast("Aus der Sitzung genommen — Datei bleibt erhalten");
@@ -567,10 +575,14 @@ public partial class MainViewModel : ObservableObject
         foreach (var old in _all)
             old.Thumbnail?.Dispose();
         _all.Clear();
-        _cache.Clear();
+        _preview.Clear();
+        _full.Clear();
+        _detailGate.Clear();
         _all.AddRange(files.Select(file => new GalleryItem(file)));
         RebuildVisible(keepSelection: false);
-        StartThumbs(_session, _all.ToList());
+        var sessionItems = _all.ToList();
+        StartThumbs(_session, sessionItems);
+        MergeSidecars(_session, sessionItems);
     }
 
     private void Resort()
@@ -664,6 +676,8 @@ public partial class MainViewModel : ObservableObject
         StopAnim(dispose: true);
         if (item is null)
         {
+            FileWidth = 0;
+            FileHeight = 0;
             _still?.Dispose();
             _still = null;
             CurrentImage = null;
@@ -672,7 +686,7 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            var pack = await GetFullAsync(item.File.Path);
+            var pack = await GetPreviewAsync(item.File.Path);
             if (token != _loadToken) return;
             if (pack is null)
             {
@@ -684,9 +698,12 @@ public partial class MainViewModel : ObservableObject
 
             item.PixelWidth = pack.OriginalWidth;
             item.PixelHeight = pack.OriginalHeight;
-            item.Details = pack.Details;
-            HasSubsampled = pack.Subsampled;
-            SubsampledNote = pack.Subsampled ? "Für die Anzeige etwas verkleinert" : "";
+            if (pack.Details is not null)
+                item.Details = pack.Details;
+            FileWidth = pack.OriginalWidth;
+            FileHeight = pack.OriginalHeight;
+            PhotoToken++;
+            DescribeResolution(pack, loading: false);
 
             if (pack.Frames.Count > 1)
             {
@@ -737,13 +754,75 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    private async Task<FullPack?> GetFullAsync(string path)
+    public void RequestDetail()
     {
-        if (_cache.TryGetValue(path, out var cached)) return cached;
-        var pack = await Task.Run(() => Imaging.Full(path));
+        var item = Selected;
+        if (item is null || _frames.Count > 1) return;
+        var path = item.File.Path;
+        if (_full.ContainsKey(path)) return;
+        if (!_detailGate.TryAdd(path, 0)) return;
+        DescribeResolution(null, loading: true);
+        _ = LoadDetailAsync(item, _loadToken);
+    }
+
+    public void ReleaseBitmap(Bitmap bitmap)
+    {
+        if (!_ready) return;
+        if (ReferenceEquals(bitmap, _still) || ReferenceEquals(bitmap, CurrentImage)) return;
+        if (_frames.Contains(bitmap)) return;
+        bitmap.Dispose();
+    }
+
+    private async Task LoadDetailAsync(GalleryItem item, int token)
+    {
+        var path = item.File.Path;
+        try
+        {
+            var pack = await Task.Run(() => Imaging.Sharp(path));
+            if (pack is null)
+            {
+                _detailGate.TryRemove(path, out _);
+                if (token == _loadToken) DescribeResolution(null, loading: false);
+                return;
+            }
+
+            if (token != _loadToken || !string.Equals(Selected?.File.Path, path, StringComparison.OrdinalIgnoreCase))
+            {
+                _detailGate.TryRemove(path, out _);
+                return;
+            }
+
+            _full[path] = pack;
+            _preview.TryRemove(path, out _);
+            TrimFull(path);
+            var still = BitmapUtil.Create(pack.Image);
+            if (token != _loadToken || !string.Equals(Selected?.File.Path, path, StringComparison.OrdinalIgnoreCase))
+            {
+                still.Dispose();
+                return;
+            }
+
+            DescribeResolution(pack, loading: false);
+            SetStill(still);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex);
+            _detailGate.TryRemove(path, out _);
+        }
+    }
+
+    private async Task<FullPack?> GetPreviewAsync(string path)
+    {
+        if (_full.TryGetValue(path, out var full)) return full;
+        if (_preview.TryGetValue(path, out var cached)) return cached;
+        var pack = await Task.Run(() => Imaging.Preview(path));
         if (pack is null) return null;
-        _cache[path] = pack;
-        TrimCache(path);
+        if (!pack.Subsampled)
+            _full[path] = pack;
+        else
+            _preview[path] = pack;
+        TrimPreview(path);
         return pack;
     }
 
@@ -753,15 +832,16 @@ public partial class MainViewModel : ObservableObject
         var index = Visible.IndexOf(Selected);
         if (index < 0 || index + 1 >= Visible.Count) return;
         var next = Visible[index + 1].File.Path;
-        if (next == current || _cache.ContainsKey(next)) return;
+        if (next == current || _preview.ContainsKey(next) || _full.ContainsKey(next)) return;
         _ = Task.Run(() =>
         {
             try
             {
-                var pack = Imaging.Full(next);
+                var pack = Imaging.Preview(next);
                 if (pack is null) return;
-                _cache[next] = pack;
-                Dispatcher.UIThread.Post(() => TrimCache(current));
+                if (!pack.Subsampled) _full[next] = pack;
+                else _preview[next] = pack;
+                Dispatcher.UIThread.Post(() => TrimPreview(current));
             }
             catch
             {
@@ -770,34 +850,83 @@ public partial class MainViewModel : ObservableObject
         });
     }
 
-    private void TrimCache(string keep)
+    private void TrimPreview(string keep)
     {
-        while (_cache.Count > 3)
+        while (_preview.Count > 4)
         {
-            var old = _cache.Keys.FirstOrDefault(key => !string.Equals(key, keep, StringComparison.OrdinalIgnoreCase));
-            if (old is null || !_cache.TryRemove(old, out _)) break;
+            var old = _preview.Keys.FirstOrDefault(key => !string.Equals(key, keep, StringComparison.OrdinalIgnoreCase) && !string.Equals(key, Selected?.File.Path, StringComparison.OrdinalIgnoreCase));
+            if (old is null || !_preview.TryRemove(old, out _)) break;
         }
+    }
+
+    private void TrimFull(string keep)
+    {
+        foreach (var key in _full.Keys.ToArray())
+        {
+            if (!string.Equals(key, keep, StringComparison.OrdinalIgnoreCase))
+                _full.TryRemove(key, out _);
+        }
+    }
+
+    private void DropCaches(string path)
+    {
+        _preview.TryRemove(path, out _);
+        _full.TryRemove(path, out _);
+        _detailGate.TryRemove(path, out _);
+    }
+
+    private void DescribeResolution(FullPack? pack, bool loading)
+    {
+        if (loading)
+        {
+            HasSubsampled = true;
+            SubsampledNote = "Volle Auflösung wird geladen…";
+            return;
+        }
+
+        if (pack is null)
+        {
+            HasSubsampled = false;
+            SubsampledNote = "";
+            return;
+        }
+
+        if (pack.Animated)
+        {
+            HasSubsampled = true;
+            SubsampledNote = "Animation etwas verkleinert";
+            return;
+        }
+
+        if (pack.IsPreview)
+        {
+            HasSubsampled = true;
+            SubsampledNote = "Vorschau — näher zoomen lädt die volle Auflösung";
+            return;
+        }
+
+        HasSubsampled = pack.Subsampled;
+        SubsampledNote = pack.Subsampled ? "Sehr groß, für den Speicher leicht verkleinert" : "";
     }
 
     private void SetStill(Bitmap bitmap)
     {
         StopAnim(dispose: true);
-        var previous = _still;
+        SmoothTransitions = true;
         _still = bitmap;
         CurrentImage = bitmap;
-        if (previous is not null && !ReferenceEquals(previous, bitmap))
-            previous.Dispose();
     }
 
     private void PlayFrames(List<Bitmap> frames, List<int> durations)
     {
         StopAnim(dispose: true);
-        _still?.Dispose();
         _still = null;
         _frames = frames;
         _durations = durations;
         _frame = 0;
+        SmoothTransitions = true;
         CurrentImage = frames[0];
+        SmoothTransitions = frames.Count > 1 ? false : true;
         if (frames.Count < 2) return;
         _anim = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(Math.Max(20, durations[0])) };
         _anim.Tick += OnAnimTick;
@@ -890,8 +1019,23 @@ public partial class MainViewModel : ObservableObject
 
         DetailTitle = item.Name;
         DetailPath = item.File.Path;
-        IsFavorite = _settings.Favorites.Contains(item.File.Path, StringComparer.OrdinalIgnoreCase);
-        Rating = _settings.Ratings.TryGetValue(item.File.Path, out var stars) ? stars : 0;
+        var note = SidecarStore.TryRead(item.File.Path);
+        if (note is SidecarNote marks)
+        {
+            Rating = marks.Rating;
+            IsFavorite = marks.OwnsFavorite
+                ? marks.Favorite
+                : _settings.Favorites.Contains(item.File.Path, StringComparer.OrdinalIgnoreCase);
+            ApplyMark(item.File.Path, marks.Rating, IsFavorite);
+        }
+        else
+        {
+            IsFavorite = _settings.Favorites.Contains(item.File.Path, StringComparer.OrdinalIgnoreCase);
+            Rating = _settings.Ratings.TryGetValue(item.File.Path, out var stars) ? stars : 0;
+            if (Rating > 0 || IsFavorite)
+                SidecarStore.TryWrite(item.File.Path, Rating, IsFavorite);
+        }
+
         UpdateStars();
 
         var rows = new List<MetaRow>();
@@ -909,6 +1053,7 @@ public partial class MainViewModel : ObservableObject
             Add(rows, "ISO", details.Iso);
             Add(rows, "Brennweite", details.FocalLength);
             Add(rows, "Aufgenommen", details.Taken);
+            Add(rows, "Farbraum", details.ColorSpace);
         }
 
         Meta = rows;
@@ -929,11 +1074,62 @@ public partial class MainViewModel : ObservableObject
         if (Selected is null) return;
         var path = Selected.File.Path;
         var next = Rating == value ? 0 : value;
-        if (next == 0) _settings.Ratings.Remove(path);
-        else _settings.Ratings[path] = next;
         Rating = next;
         UpdateStars();
+        if (!RememberMarks(path, next, IsFavorite))
+            Toast("Neben der Datei nicht schreibbar — nur in den Einstellungen gemerkt");
+    }
+
+    private bool RememberMarks(string path, int rating, bool favorite)
+    {
+        ApplyMark(path, rating, favorite);
+        RebuildSavedLists();
+        var wrote = SidecarStore.TryWrite(path, rating, favorite);
         SaveSoon();
+        return wrote;
+    }
+
+    private void ApplyMark(string path, int rating, bool favorite)
+    {
+        if (rating <= 0) _settings.Ratings.Remove(path);
+        else _settings.Ratings[path] = Math.Clamp(rating, 1, 5);
+        var listed = _settings.Favorites.Contains(path, StringComparer.OrdinalIgnoreCase);
+        if (favorite && !listed)
+            _settings.Favorites.Insert(0, path);
+        if (!favorite && listed)
+            _settings.Favorites.RemoveAll(item => string.Equals(item, path, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void MergeSidecars(int session, List<GalleryItem> items)
+    {
+        _ = Task.Run(() =>
+        {
+            var updates = new List<(string Path, int Rating, bool Favorite, bool OwnsFavorite)>();
+            foreach (var item in items)
+            {
+                if (session != _session) return;
+                if (SidecarStore.TryRead(item.File.Path) is not SidecarNote marks) continue;
+                if (marks.Rating <= 0 && !marks.OwnsFavorite) continue;
+                updates.Add((item.File.Path, marks.Rating, marks.Favorite, marks.OwnsFavorite));
+            }
+
+            if (updates.Count == 0) return;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (session != _session) return;
+                foreach (var update in updates)
+                {
+                    var favorite = update.OwnsFavorite
+                        ? update.Favorite
+                        : _settings.Favorites.Contains(update.Path, StringComparer.OrdinalIgnoreCase);
+                    ApplyMark(update.Path, update.Rating, favorite);
+                }
+
+                RebuildSavedLists();
+                if (Selected is not null)
+                    BindDetails(Selected);
+            });
+        });
     }
 
     private void UpdateStars()
@@ -1017,14 +1213,17 @@ public partial class MainViewModel : ObservableObject
             _watcher = new FileSystemWatcher(folder)
             {
                 IncludeSubdirectories = Recursive,
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.DirectoryName,
                 EnableRaisingEvents = true
             };
-            FileSystemEventHandler changed = (_, _) => DebounceRescan();
-            _watcher.Created += changed;
-            _watcher.Deleted += changed;
-            _watcher.Changed += changed;
-            _watcher.Renamed += (_, _) => DebounceRescan();
+            _watcher.Created += (_, e) => QueueWatch(e.FullPath, add: true);
+            _watcher.Deleted += (_, e) => QueueWatch(e.FullPath, add: false);
+            _watcher.Changed += (_, e) => QueueWatch(e.FullPath, add: true);
+            _watcher.Renamed += (_, e) =>
+            {
+                QueueWatch(e.OldFullPath, add: false);
+                QueueWatch(e.FullPath, add: true);
+            };
         }
         catch
         {
@@ -1032,8 +1231,13 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    private void DebounceRescan()
+    private void QueueWatch(string? path, bool add)
     {
+        path = NormalizeWatchPath(path);
+        if (path is null || !ImageTypes.IsSupported(path)) return;
+        lock (_watchGate)
+            _watchPending[path] = add;
+
         _watchCts?.Cancel();
         var cts = new CancellationTokenSource();
         _watchCts = cts;
@@ -1041,22 +1245,103 @@ public partial class MainViewModel : ObservableObject
         {
             try
             {
-                await Task.Delay(600, cts.Token);
-                await Dispatcher.UIThread.InvokeAsync(async () =>
+                await Task.Delay(450, cts.Token);
+                Dictionary<string, bool> batch;
+                lock (_watchGate)
                 {
-                    if (_folder is null || cts.IsCancellationRequested) return;
-                    var keep = Selected?.File.Path;
-                    await LoadFolderAsync(_folder);
-                    if (keep is null) return;
-                    var match = _all.FirstOrDefault(item => string.Equals(item.File.Path, keep, StringComparison.OrdinalIgnoreCase));
-                    if (match is not null) Selected = match;
-                });
+                    batch = new Dictionary<string, bool>(_watchPending, StringComparer.OrdinalIgnoreCase);
+                    _watchPending.Clear();
+                }
+
+                await Dispatcher.UIThread.InvokeAsync(() => ApplyWatch(batch));
             }
             catch (TaskCanceledException)
             {
-                // A newer change replaced this refresh.
+                // A newer change replaced this one.
             }
         });
+    }
+
+    private string? NormalizeWatchPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        if (!Path.IsPathRooted(path) && _folder is not null)
+            path = Path.Combine(_folder, path);
+        return path;
+    }
+
+    private void ApplyWatch(Dictionary<string, bool> batch)
+    {
+        if (_folder is null || batch.Count == 0) return;
+        var removedSelected = false;
+        string? neighbor = null;
+        var added = new List<GalleryItem>();
+        var changed = false;
+
+        foreach (var (path, add) in batch)
+        {
+            var existing = _all.FirstOrDefault(item => string.Equals(item.File.Path, path, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null)
+            {
+                if (add && existing.Failed && File.Exists(path))
+                {
+                    existing.Failed = false;
+                    added.Add(existing);
+                    changed = true;
+                }
+
+                if (!add)
+                {
+                    if (ReferenceEquals(existing, Selected))
+                    {
+                        removedSelected = true;
+                        var index = Visible.IndexOf(existing);
+                        if (index >= 0)
+                        {
+                            var next = index + 1 < Visible.Count ? Visible[index + 1] : index > 0 ? Visible[index - 1] : null;
+                            neighbor = next?.File.Path;
+                        }
+                    }
+
+                    _all.Remove(existing);
+                    existing.Thumbnail?.Dispose();
+                    DropCaches(path);
+                    changed = true;
+                }
+
+                continue;
+            }
+
+            if (!add || !File.Exists(path)) continue;
+            try
+            {
+                var info = new FileInfo(path);
+                if (info.Length <= 0) continue;
+                var item = new GalleryItem(new ImageFile(info.FullName, info.Name, info.Length, info.LastWriteTimeUtc));
+                _all.Add(item);
+                added.Add(item);
+                changed = true;
+            }
+            catch
+            {
+                // The file can disappear between the event and the read.
+            }
+        }
+
+        if (!changed) return;
+        if (removedSelected)
+        {
+            Selected = neighbor is null
+                ? null
+                : _all.FirstOrDefault(item => string.Equals(item.File.Path, neighbor, StringComparison.OrdinalIgnoreCase));
+        }
+
+        Resort();
+        if (removedSelected && Selected is null)
+            Selected = Visible.FirstOrDefault();
+        if (added.Count > 0)
+            StartThumbs(_session, added);
+        UpdateChrome();
     }
 
     private void StopWatch()

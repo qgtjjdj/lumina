@@ -13,6 +13,7 @@ public enum IconKind
     Play,
     Pause,
     RotateCw,
+    RotateCcw,
     FlipH,
     FlipV,
     Info,
@@ -83,6 +84,7 @@ public class Icon : Control
         Add(IconKind.Play, "M8,5.5 L19,12 L8,18.5 Z");
         Add(IconKind.Pause, "M6,5 H10 V19 H6 Z M14,5 H18 V19 H14 Z");
         Add(IconKind.RotateCw, "M16.8,6.2 A8,8 0 1 0 20,13 H17.2 A5.4,5.4 0 1 1 14.6,8.2 L12.2,10.6 H20 V3 Z");
+        Add(IconKind.RotateCcw, "M7.2,6.2 A8,8 0 1 1 4,13 H6.8 A5.4,5.4 0 1 0 9.4,8.2 L11.8,10.6 H4 V3 Z");
         Add(IconKind.FlipH, "M11,4 H13 V20 H11 Z M7.5,7.5 L3,12 L7.5,16.5 Z M16.5,7.5 L21,12 L16.5,16.5 Z");
         Add(IconKind.FlipV, "M4,11 H20 V13 H4 Z M7.5,7.5 L12,3 L16.5,7.5 Z M7.5,16.5 L12,21 L16.5,16.5 Z");
         Add(IconKind.Info, "M12,2.5 A9.5,9.5 0 1 0 12,21.5 A9.5,9.5 0 0 0 12,2.5 Z M11,10.5 H13 V17.5 H11 Z M11,6.5 H13 V8.5 H11 Z");

@@ -21,7 +21,11 @@
                          Rotation="{Binding Rotation}"
                          FlipH="{Binding FlipH}"
                          FlipV="{Binding FlipV}"
-                         Stage="{Binding Stage}"/>
+                         Stage="{Binding Stage}"
+                         FileWidth="{Binding FileWidth}"
+                         FileHeight="{Binding FileHeight}"
+                         PhotoToken="{Binding PhotoToken}"
+                         Crossfade="{Binding SmoothTransitions}"/>
 
     <Border IsVisible="{Binding ShowWelcome}"
             HorizontalAlignment="Center"
@@ -40,7 +44,7 @@
             <TextBlock Text="Bilder, ruhig und groß." Classes="muted"/>
           </StackPanel>
         </StackPanel>
-        <TextBlock Text="Ordner öffnen, Dateien wählen oder sie einfach auf das Fenster ziehen. JPG, PNG, GIF, WebP, TIFF, BMP."
+        <TextBlock Text="Ordner öffnen, Dateien wählen oder sie einfach auf das Fenster ziehen. JPG, PNG, GIF, WebP, TIFF, HEIC und RAW."
                    TextWrapping="Wrap"
                    Foreground="{DynamicResource LumMuted}"
                    FontSize="13"
@@ -380,7 +384,7 @@
         </StackPanel>
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
           <Button Classes="ghost" Command="{Binding RotateCcwCommand}" ToolTip.Tip="Links drehen (Umschalt+R)">
-            <views:Icon Kind="RotateCw"/>
+            <views:Icon Kind="RotateCcw"/>
           </Button>
           <Button Classes="ghost" Command="{Binding FlipHorizontalCommand}" ToolTip.Tip="Horizontal spiegeln (H)">
             <views:Icon Kind="FlipH"/>
@@ -427,8 +431,9 @@
             </Button>
           </Grid>
           <TextBlock Classes="muted" TextWrapping="Wrap" LineHeight="22"
-                     Text="← →  vor / zurück&#x0a;Leertaste  Diashow&#x0a;Mausrad  Zoom am Cursor, ziehen zum Verschieben&#x0a;Doppelklick  Einpassen / 100 %    Mittelklick  Einpassen&#x0a;+ −  Zoom    0 Einpassen    1 100 %    2 Füllen&#x0a;R drehen    H / V spiegeln&#x0a;F oder F11  Vollbild    Esc  zurück&#x0a;I Infos    Entf  aus der Sitzung nehmen&#x0a;Strg+O Dateien    Strg+Umschalt+O Ordner    F5 aktualisieren&#x0a;Strg+C Pfad kopieren"/>
-          <TextBlock Classes="muted" Text="Bewertungen und Favoriten bleiben lokal. Dateien werden nie gelöscht."/>
+                     Text="← →  vor / zurück&#x0a;Leertaste  Diashow&#x0a;Mausrad  Zoom am Cursor, ziehen zum Verschieben&#x0a;Doppelklick  Einpassen / 100 %    Mittelklick  Einpassen&#x0a;+ −  Zoom    0 Einpassen    1 100 %    2 Füllen&#x0a;R drehen    H / V spiegeln&#x0a;F oder F11  Vollbild    Esc  zurück&#x0a;I Infos    Entf  aus der Sitzung nehmen&#x0a;Strg+O Dateien    Strg+Umschalt+O Ordner    F5 aktualisieren&#x0a;Strg+C Pfad kopieren&#x0a;Näher zoomen lädt die volle Auflösung."/>
+          <TextBlock Classes="muted" TextWrapping="Wrap"
+                     Text="Sterne und Favoriten liegen als .lumina.xmp neben der Datei. Das Bild selbst wird nicht verändert."/>
         </StackPanel>
       </Border>
     </Border>

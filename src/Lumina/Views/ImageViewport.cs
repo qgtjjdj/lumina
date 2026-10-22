@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 namespace Lumina.Views;
 
@@ -51,6 +52,18 @@ public class ImageViewport : Control
     public static readonly StyledProperty<StageBackdrop> StageProperty =
         AvaloniaProperty.Register<ImageViewport, StageBackdrop>(nameof(Stage));
 
+    public static readonly StyledProperty<int> FileWidthProperty =
+        AvaloniaProperty.Register<ImageViewport, int>(nameof(FileWidth));
+
+    public static readonly StyledProperty<int> FileHeightProperty =
+        AvaloniaProperty.Register<ImageViewport, int>(nameof(FileHeight));
+
+    public static readonly StyledProperty<int> PhotoTokenProperty =
+        AvaloniaProperty.Register<ImageViewport, int>(nameof(PhotoToken));
+
+    public static readonly StyledProperty<bool> CrossfadeProperty =
+        AvaloniaProperty.Register<ImageViewport, bool>(nameof(Crossfade), true);
+
     public static readonly DirectProperty<ImageViewport, string> ZoomLabelProperty =
         AvaloniaProperty.RegisterDirect<ImageViewport, string>(nameof(ZoomLabel), o => o.ZoomLabel);
 
@@ -59,8 +72,6 @@ public class ImageViewport : Control
     private static readonly IBrush PaperBase = new SolidColorBrush(Color.Parse("#D9D3C8"));
     private static readonly IBrush CheckerA = new SolidColorBrush(Color.Parse("#121418"));
     private static readonly IBrush CheckerB = new SolidColorBrush(Color.Parse("#1C2028"));
-    private static readonly IBrush PaperA = new SolidColorBrush(Color.Parse("#E4DDD2"));
-    private static readonly IBrush PaperB = new SolidColorBrush(Color.Parse("#F4EFE7"));
 
     private static readonly RadialGradientBrush VoidGlow = CreateGlow("#2A231B", "#00090A0C");
     private static readonly RadialGradientBrush InkGlow = CreateGlow("#161616", "#00050505");
@@ -70,6 +81,14 @@ public class ImageViewport : Control
     private bool _drag;
     private Point _last;
     private int _renderedRotation = int.MinValue;
+    private bool _askedDetail;
+    private Bitmap? _fadeFrom;
+    private double _fade = 1;
+    private DispatcherTimer? _fadeTimer;
+    private readonly System.Diagnostics.Stopwatch _fadeWatch = new();
+
+    public event EventHandler? DetailRequested;
+    public event EventHandler<Bitmap>? BitmapRetired;
 
     static ImageViewport()
     {
@@ -82,7 +101,9 @@ public class ImageViewport : Control
             RotationProperty,
             FlipHProperty,
             FlipVProperty,
-            StageProperty);
+            StageProperty,
+            FileWidthProperty,
+            FileHeightProperty);
     }
 
     public ImageViewport()
@@ -145,6 +166,30 @@ public class ImageViewport : Control
         set => SetValue(StageProperty, value);
     }
 
+    public int FileWidth
+    {
+        get => GetValue(FileWidthProperty);
+        set => SetValue(FileWidthProperty, value);
+    }
+
+    public int FileHeight
+    {
+        get => GetValue(FileHeightProperty);
+        set => SetValue(FileHeightProperty, value);
+    }
+
+    public int PhotoToken
+    {
+        get => GetValue(PhotoTokenProperty);
+        set => SetValue(PhotoTokenProperty, value);
+    }
+
+    public bool Crossfade
+    {
+        get => GetValue(CrossfadeProperty);
+        set => SetValue(CrossfadeProperty, value);
+    }
+
     public string ZoomLabel
     {
         get => _zoomLabel;
@@ -166,13 +211,43 @@ public class ImageViewport : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == SourceProperty && !Equals(change.OldValue, change.NewValue) && ZoomMode == ZoomMode.Free)
+        if (change.Property == PhotoTokenProperty)
+            _askedDetail = false;
+
+        if (change.Property == SourceProperty)
         {
-            // Keep the user's zoom only when the view-model asks to. Otherwise Fit() is called.
+            var oldBmp = change.OldValue as Bitmap;
+            var newBmp = change.NewValue as Bitmap;
+            if (oldBmp is not null && newBmp is not null && !ReferenceEquals(oldBmp, newBmp) && ZoomMode == ZoomMode.Free
+                && oldBmp.PixelSize.Width > 0 && newBmp.PixelSize.Width > 0
+                && oldBmp.PixelSize.Width != newBmp.PixelSize.Width)
+            {
+                var adjusted = Math.Clamp(UserScale * oldBmp.PixelSize.Width / newBmp.PixelSize.Width, 0.02, 32);
+                if (Math.Abs(adjusted - UserScale) > 0.0001)
+                    UserScale = adjusted;
+            }
+
+            if (oldBmp is not null && !ReferenceEquals(oldBmp, newBmp))
+            {
+                if (Crossfade && newBmp is not null)
+                    BeginFade(oldBmp);
+                else
+                {
+                    CancelFade(retire: true);
+                    Retire(oldBmp);
+                }
+            }
         }
 
-        if (change.Property == BoundsProperty || change.Property == SourceProperty || change.Property == ZoomModeProperty || change.Property == RotationProperty)
+        if (change.Property == FileWidthProperty)
             UpdateLabel();
+
+        if (change.Property == BoundsProperty || change.Property == SourceProperty || change.Property == ZoomModeProperty
+            || change.Property == RotationProperty)
+        {
+            UpdateLabel();
+            ConsiderDetail();
+        }
     }
 
     public override void Render(DrawingContext context)
@@ -182,22 +257,20 @@ public class ImageViewport : Control
         if (bitmap is null || Bounds.Width < 2 || Bounds.Height < 2) return;
 
         var scale = EffectiveScale();
-        var pw = bitmap.PixelSize.Width;
-        var ph = bitmap.PixelSize.Height;
-        if (pw <= 0 || ph <= 0) return;
-
-        var rot = NormalizedRotation();
-        var cx = Bounds.Width / 2 + PanX;
-        var cy = Bounds.Height / 2 + PanY;
-
-        using (context.PushTransform(Matrix.CreateTranslation(cx, cy)))
-        using (context.PushTransform(Matrix.CreateRotation(rot * Math.PI / 180.0)))
-        using (context.PushTransform(Matrix.CreateScale(FlipH ? -1 : 1, FlipV ? -1 : 1)))
+        if (_fadeFrom is not null && _fade < 0.999)
         {
-            var rect = new Rect(-pw * scale / 2, -ph * scale / 2, pw * scale, ph * scale);
-            context.DrawImage(bitmap, rect);
+            var fromScale = scale;
+            if (bitmap.PixelSize.Width > 0 && _fadeFrom.PixelSize.Width > 0)
+                fromScale = scale * bitmap.PixelSize.Width / _fadeFrom.PixelSize.Width;
+            DrawBitmap(context, _fadeFrom, fromScale, 1 - _fade);
+            DrawBitmap(context, bitmap, scale, _fade);
+        }
+        else
+        {
+            DrawBitmap(context, bitmap, scale, 1);
         }
 
+        var rot = NormalizedRotation();
         if (_renderedRotation != rot)
         {
             _renderedRotation = rot;
@@ -270,12 +343,19 @@ public class ImageViewport : Control
         Cursor = new Cursor(StandardCursorType.Arrow);
     }
 
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _fadeTimer?.Stop();
+        base.OnDetachedFromVisualTree(e);
+    }
+
     private void SetMode(ZoomMode mode)
     {
         ZoomMode = mode;
         PanX = 0;
         PanY = 0;
         UpdateLabel();
+        ConsiderDetail();
         InvalidateVisual();
     }
 
@@ -292,6 +372,7 @@ public class ImageViewport : Control
         UserScale = next;
         ZoomMode = ZoomMode.Free;
         UpdateLabel();
+        ConsiderDetail();
         InvalidateVisual();
     }
 
@@ -305,7 +386,7 @@ public class ImageViewport : Control
         return ZoomMode switch
         {
             ZoomMode.Fill => Math.Max(Bounds.Width / w, Bounds.Height / h),
-            ZoomMode.Actual => 1.0 / RenderScale(),
+            ZoomMode.Actual => (1.0 / RenderScale()) / BitmapPerFile(),
             ZoomMode.Free => UserScale <= 0 ? 1 : UserScale,
             _ => Math.Min(Math.Max(1, Bounds.Width - 72) / w, Math.Max(1, Bounds.Height - 168) / h)
         };
@@ -331,6 +412,26 @@ public class ImageViewport : Control
         return scale <= 0.01 ? 1 : scale;
     }
 
+    private double BitmapPerFile()
+    {
+        var bitmap = Source;
+        if (bitmap is null || FileWidth <= 0) return 1;
+        var width = bitmap.PixelSize.Width;
+        if (width <= 0) return 1;
+        return Math.Clamp(width / (double)FileWidth, 0.01, 1);
+    }
+
+    private void ConsiderDetail()
+    {
+        if (_askedDetail || Source is null) return;
+        var ratio = BitmapPerFile();
+        if (ratio >= 0.985) return;
+        var magnification = EffectiveScale() * RenderScale() * ratio;
+        if (ZoomMode != ZoomMode.Actual && magnification < 0.62) return;
+        _askedDetail = true;
+        DetailRequested?.Invoke(this, EventArgs.Empty);
+    }
+
     private void UpdateLabel()
     {
         if (Source is null)
@@ -339,7 +440,7 @@ public class ImageViewport : Control
             return;
         }
 
-        var percent = EffectiveScale() * RenderScale() * 100.0;
+        var percent = EffectiveScale() * RenderScale() * BitmapPerFile() * 100.0;
         ZoomLabel = ZoomMode switch
         {
             ZoomMode.Fit => $"Einpassen · {percent:0}%",
@@ -347,6 +448,78 @@ public class ImageViewport : Control
             ZoomMode.Actual => "100%",
             _ => $"{percent:0}%"
         };
+    }
+
+    private void DrawBitmap(DrawingContext context, Bitmap bitmap, double scale, double opacity)
+    {
+        if (opacity <= 0.01) return;
+        if (opacity < 0.999)
+        {
+            using (context.PushOpacity(opacity))
+                DrawTransformed(context, bitmap, scale);
+            return;
+        }
+
+        DrawTransformed(context, bitmap, scale);
+    }
+
+    private void DrawTransformed(DrawingContext context, Bitmap bitmap, double scale)
+    {
+        var pw = bitmap.PixelSize.Width;
+        var ph = bitmap.PixelSize.Height;
+        if (pw <= 0 || ph <= 0) return;
+
+        var rot = NormalizedRotation();
+        var cx = Bounds.Width / 2 + PanX;
+        var cy = Bounds.Height / 2 + PanY;
+        using (context.PushTransform(Matrix.CreateTranslation(cx, cy)))
+        using (context.PushTransform(Matrix.CreateRotation(rot * Math.PI / 180.0)))
+        using (context.PushTransform(Matrix.CreateScale(FlipH ? -1 : 1, FlipV ? -1 : 1)))
+        {
+            var rect = new Rect(-pw * scale / 2, -ph * scale / 2, pw * scale, ph * scale);
+            context.DrawImage(bitmap, rect);
+        }
+    }
+
+    private void BeginFade(Bitmap from)
+    {
+        if (!ReferenceEquals(_fadeFrom, from))
+            Retire(_fadeFrom);
+        _fadeFrom = from;
+        _fade = 0;
+        _fadeWatch.Restart();
+        _fadeTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        _fadeTimer.Tick -= OnFadeTick;
+        _fadeTimer.Tick += OnFadeTick;
+        _fadeTimer.Start();
+        InvalidateVisual();
+    }
+
+    private void OnFadeTick(object? sender, EventArgs e)
+    {
+        var t = Math.Clamp(_fadeWatch.Elapsed.TotalMilliseconds / 200.0, 0, 1);
+        _fade = t * t * (3 - 2 * t);
+        InvalidateVisual();
+        if (t < 1) return;
+        _fadeTimer?.Stop();
+        var from = _fadeFrom;
+        _fadeFrom = null;
+        Retire(from);
+    }
+
+    private void CancelFade(bool retire)
+    {
+        _fadeTimer?.Stop();
+        var from = _fadeFrom;
+        _fadeFrom = null;
+        _fade = 1;
+        if (retire) Retire(from);
+    }
+
+    private void Retire(Bitmap? bitmap)
+    {
+        if (bitmap is null) return;
+        BitmapRetired?.Invoke(this, bitmap);
     }
 
     private void DrawStage(DrawingContext context)

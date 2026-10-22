@@ -1,7 +1,11 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+using Lumina.Models;
 using Lumina.ViewModels;
 
 namespace Lumina.Views;
@@ -23,6 +27,14 @@ public partial class MainWindow : Window
             if (e.Property == ImageViewport.ZoomLabelProperty)
                 ZoomReadout.Text = Viewport.ZoomLabel;
         };
+        Viewport.DetailRequested += (_, _) =>
+        {
+            if (DataContext is MainViewModel vm) vm.RequestDetail();
+        };
+        Viewport.BitmapRetired += (_, bitmap) =>
+        {
+            if (DataContext is MainViewModel vm) vm.ReleaseBitmap(bitmap);
+        };
     }
 
     protected override void OnDataContextChanged(EventArgs e)
@@ -34,11 +46,36 @@ public partial class MainWindow : Window
             WindowState = full ? WindowState.FullScreen : WindowState.Normal;
         };
         vm.FitRequested += () => Viewport.Fit();
-        vm.ScrollRequested += item =>
+        vm.ScrollRequested += CenterFilm;
+    }
+
+    private void CenterFilm(GalleryItem? item)
+    {
+        if (item is null) return;
+        Film.ScrollIntoView(item);
+        Dispatcher.UIThread.Post(() =>
         {
-            if (item is not null)
-                Film.ScrollIntoView(item);
-        };
+            if (Film.ContainerFromItem(item) is not Control container) return;
+            var scroller = FindDescendant<ScrollViewer>(Film);
+            if (scroller is null) return;
+            var origin = container.TranslatePoint(new Point(0, 0), scroller);
+            if (origin is null) return;
+            var target = scroller.Offset.X + origin.Value.X - (scroller.Viewport.Width - container.Bounds.Width) / 2;
+            var max = Math.Max(0, scroller.Extent.Width - scroller.Viewport.Width);
+            scroller.Offset = new Vector(Math.Clamp(target, 0, max), scroller.Offset.Y);
+        }, DispatcherPriority.Loaded);
+    }
+
+    private static T? FindDescendant<T>(Visual visual) where T : Visual
+    {
+        foreach (var child in visual.GetVisualChildren())
+        {
+            if (child is T typed) return typed;
+            var nested = FindDescendant<T>(child);
+            if (nested is not null) return nested;
+        }
+
+        return null;
     }
 
     protected override void OnOpened(EventArgs e)
